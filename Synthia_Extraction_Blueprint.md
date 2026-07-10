@@ -100,51 +100,51 @@ This document contains a surgical, forensic code extraction of the algorithmic p
 ### 2.1 — Model Dynamicity & Asset Loading
 
 **How the project avoids hardcoding meshes**:
-ProtoMotions loads general humanoid assets at runtime using MuJoCo MJCF XML files. The kinematic extraction dynamically parses the XML hierarchy to determine parent/child joints, limits, and coordinate framing without hardcoding skeletal joints.
+ProtoMotions parses general humanoid assets at runtime using MuJoCo MJCF XML files. The kinematic extraction dynamically traverses the XML hierarchy to determine parent/child joints, limits, and coordinate framing without hardcoding skeletal joints.
 
 To retarget arbitrary keypoints (e.g., from SMPL, RigV1, or SOMA formats) onto robot geometries like the Unitree G1, ProtoMotions employs JAX-based optimization in `PyRoki` (`pyroki/batch_retarget_to_g1_from_keypoints.py`). It calculates relative bone position vectors and relative angle differences, minimizing tracking costs over time to align the skeleton dynamically.
 
-#### Code Snippets (Key Logic Lines)
+#### Verified Code Snippets (Key Logic Lines)
 
 **From `protomotions/components/pose_lib.py` (Kinematic Parsing):**
 ```python
-# Lines 396-415: Extracting body/joint configurations dynamically from MJCF
-mjcf_model = mjcf.from_path(mjcf_path)
-angle_unit = getattr(mjcf_model.compiler, "angle", None)
-angle_to_radians = 1.0 if angle_unit == "radian" else np.pi / 180.0
+# Lines 396-411: Extracting body/joint configurations dynamically from MJCF (VERIFIED)
+def extract_kinematic_info(mjcf_path: str) -> KinematicInfo:
+    mjcf_model = mjcf.from_path(mjcf_path)
+    global_default_joint = getattr(mjcf_model.default, "joint", None)
 
-bodies = []
-# ... Traversing MJCF worldbody structure recursively ...
-for body in worldbody.all_children():
-    # Detect joints on this body dynamically
-    joints = body.find_all('joint')
-    for joint in joints:
-        # Save axes, ranges, limits, parent/child index offsets
-        limits = joint.range * angle_to_radians
+    # Check if angles are in degrees or radians (default is degrees in MuJoCo)
+    angle_unit = getattr(mjcf_model.compiler, "angle", None)
+    # Default to degrees unless explicitly set to 'radian'
+    angle_to_radians = 1.0 if angle_unit == "radian" else np.pi / 180.0
 ```
 
 **From `pyroki/batch_retarget_to_g1_from_keypoints.py` (Retarget Cost Function):**
 ```python
-# Lines 568-589: Relative vector-matching and angle costs
-delta_target = target_pos[:, None] - target_pos[None, :]
-delta_robot = robot_pos[:, None] - robot_pos[None, :]
+# Lines 1001-1018: Relative vector-matching and angle costs (VERIFIED)
+        residual_position_delta = (
+            (delta_target - delta_robot * position_scale)
+            * (1 - jnp.eye(delta_target.shape[0])[..., None])
+            * g1_retarget_mask[..., None]
+        )
 
-# Vector distance regularization matching target and robot bones
-residual_position_delta = (
-    (delta_target - delta_robot * position_scale)
-    * (1 - jnp.eye(delta_target.shape[0])[..., None])
-    * g1_retarget_mask[..., None]
-)
-
-# Vector angle normalization to maintain bone alignment
-residual_angle_delta = 1 - (
-    delta_target_normalized * delta_robot_normalized
-).sum(axis=-1)
+        # Vector angle regularization.
+        delta_target_normalized = delta_target / jnp.linalg.norm(
+            delta_target + 1e-6, axis=-1, keepdims=True
+        )
+        delta_robot_normalized = delta_robot / jnp.linalg.norm(
+            delta_robot + 1e-6, axis=-1, keepdims=True
+        )
+        residual_angle_delta = 1 - (
+            delta_target_normalized * delta_robot_normalized
+        ).sum(axis=-1)
 ```
 
-**Explanation**:
-1. `pose_lib.py` extracts the kinematic structures dynamically. Instead of matching string bone names, it processes index offsets, local position transforms, and joint hinge axes from the XML description.
-2. In `PyRoki`, the relative matrices between joints are mapped as a matrix of relative vector offsets. The optimizer minimizes both relative vector length differences (`residual_position_delta`) and relative angular alignment (`residual_angle_delta`). This lets the system retarget keypoints onto a humanoid morphology regardless of naming or bone count mismatches.
+#### Crucial Conceptual Gap (Config-swapping vs. Ingesting Unknown Meshes)
+While the optimization terms in `PyRoki` solve relative bone tracking perfectly, you must understand a key limitation of ProtoMotions:
+* **ProtoMotions' definition of dynamicity is "Config-Swapping"**: The framework operates by selecting from a *known, pre-registered catalog* of morphology configuration files (`g1.py`, `h1_2.py`, `smpl.py`, `soma23.py`). Each morphology declares an explicit naming dictionary and rigid body hierarchy.
+* **What it lacks (The Synthia Need)**: ProtoMotions does *not* possess an ingestion layer that can drop in a completely arbitrary, unknown user-uploaded visual mesh and auto-generate kinematic definitions at runtime with zero naming maps.
+* **The Solution**: For Synthia, the exact answer to "why is our project locked to one fixed mesh" lies in **AMICA** or **Human2Humanoid** extraction pipelines—specifically their VRM standard humanoid bone translation layer, which dynamically resolves standard visual bone schemas (e.g., VRM's `HumanoidBoneName` enum) to a canonical schema without hardcoded local offset mapping files.
 
 ---
 
@@ -156,36 +156,48 @@ $$\tau = K_p \cdot (\theta_{\text{target}} - \theta_{\text{current}}) - K_d \cdo
 
 This value is clamped against each joint's maximum physical effort limit to prevent hyperextensions, visual clipping, and explosive simulator instabilities.
 
-#### Code Snippets (Key Logic Lines)
+#### Verified Code Snippets (Key Logic Lines)
 
 **From `protomotions/simulator/base_simulator/simulator.py` (Custom PD Formulation):**
 ```python
-# Lines 1295-1311: Proportional PD calculations
-common_dof_state = self._get_simulator_dof_state().convert_to_common(self.data_conversion)
-torques = (
-    self._common_p_gains * (targets - common_dof_state.dof_pos)
-    - self._common_d_gains * common_dof_state.dof_vel
-)
-torques = torch.clip(
-    torques, -self._torque_limits_common, self._torque_limits_common
-)
+# Lines 1295-1311: Proportional PD calculations (VERIFIED)
+        elif self.control_type == ControlType.PROPORTIONAL:
+            targets = self._common_actions
+            # ... Domain noise randomization applied ...
+            common_dof_state = self._get_simulator_dof_state().convert_to_common(
+                self.data_conversion
+            )
+            torques = (
+                self._common_p_gains * (targets - common_dof_state.dof_pos)
+                - self._common_d_gains * common_dof_state.dof_vel
+            )
+            torques = torch.clip(
+                torques, -self._torque_limits_common, self._torque_limits_common
+            )
 ```
 
 **From `protomotions/simulator/newton/simulator.py` (Explicit Warp PD Kernel):**
 ```python
-# Lines 38-51: Warp GPU kernel for high-frequency PD integration
-pos = joint_q[q_idx]
-vel = joint_qd[qd_idx]
-target = pd_targets[tid]
-
-torque = kp[dof_id] * (target - pos) - kd[dof_id] * vel
-torque = wp.clamp(torque, -torque_limits[dof_id], torque_limits[dof_id])
-joint_f[qd_idx] = torque
+# Lines 46-59: Warp GPU kernel for high-frequency PD integration (VERIFIED)
+def compute_pd_torques_kernel(
+    joint_q: wp.array(dtype=wp.float32),
+    joint_qd: wp.array(dtype=wp.float32),
+    joint_f: wp.array(dtype=wp.float32),
+    pd_targets: wp.array(dtype=wp.float32),
+    kp: wp.array(dtype=wp.float32),
+    kd: wp.array(dtype=wp.float32),
+    torque_limits: wp.array(dtype=wp.float32),
+    q_stride: int,
+    qd_stride: int,
+    q_dof_start: int,
+    qd_dof_start: int,
+    num_dofs: int,
+):
 ```
 
 **Explanation**:
-1. If the control type is set to `PROPORTIONAL`, ProtoMotions calculates motor torques manually using the difference between target and current positions scaled by `_common_p_gains` ($K_p$), subtracting velocity scaled by `_common_d_gains` ($K_d$).
-2. Torques are immediately clipped within $[- \text{limit}, + \text{limit}]$ matching effort boundaries.
+1. When control is proportional (`ControlType.PROPORTIONAL`), ProtoMotions calculates motor torques based on positional error ($target - current$) scaled by proportional stiffness ($K_p$), minus velocity scaled by derivative damping ($K_d$).
+2. Torques are strictly clipped inside torque boundaries (`_torque_limits_common`) derived from MJCF actuator constraints.
 3. This is physically realistic. Joints drive smoothly toward their targets rather than violently overwriting coordinates, maintaining stability and avoiding self-collisions near joint limits.
 
 ---
@@ -196,36 +208,31 @@ joint_f[qd_idx] = torque
 State vectors are constructed inside local frames to guarantee translation and yaw-invariance.
 
 #### Field Enumerate (In Sequence)
-1. **Root Height above Ground (`root_h_obs`)**: $[1]$ — Difference between the root's z-position and the elevation of the terrain immediately underneath.
-2. **Local Joint Positions (`dof_pos`)**: $[N_{\text{dofs}}]$ — Current relative joint rotations.
-3. **Local Joint Velocities (`dof_vel`)**: $[N_{\text{dofs}}]$ — Current angular velocities.
-4. **Local Root Angular Velocity (`root_local_ang_vel`)**: $[3]$ — Root angular velocity vector rotated into the local coordinate frame.
-5. **Projected Gravity Vector (`proj_gravity`)**: $[3]$ — Gravity vector $[0, 0, -1]$ transformed by the root orientation's inverse quaternion.
-6. **Local Root Linear Velocity (`normalized_root_vel`)**: $[3]$ — Root linear velocity vector rotated into the local coordinate frame (included if `root_vel_obs` is true).
+1. **Local Joint Positions (`dof_pos`)**: $[N_{\text{dofs}}]$ — Current relative joint rotations.
+2. **Local Joint Velocities (`dof_vel`)**: $[N_{\text{dofs}}]$ — Current angular velocities.
+3. **Local Root Angular Velocity (`root_local_ang_vel`)**: $[3]$ — Root angular velocity vector rotated into the local coordinate frame.
+4. **Projected Gravity Vector (`proj_gravity`)**: $[3]$ — Gravity vector $[0, 0, -1]$ transformed by the root orientation's inverse quaternion.
+5. **Local Root Linear Velocity (`normalized_root_vel`)**: $[3]$ — Root linear velocity vector rotated into the local coordinate frame (included if `root_vel_obs` is true).
 
-#### Code Snippets (Key Logic Lines)
+#### Verified Code Snippets (Key Logic Lines)
 
 **From `protomotions/envs/obs/humanoid.py`:**
 ```python
-# Lines 191-209: Local coordinate transforms and concatenation
-proj_gravity = root_projected_gravity(anchor_rot, w_last)
+# Lines 194-205: Local coordinate transforms and concatenation (VERIFIED)
+    num_envs = dof_pos.shape[0]
+    proj_gravity = root_projected_gravity(anchor_rot, w_last)
 
-obs = [
-    dof_pos.view(num_envs, -1),
-    dof_vel.view(num_envs, -1),
-    root_local_ang_vel.view(num_envs, -1),
-    proj_gravity.view(num_envs, -1),
-]
-
-if root_vel_obs:
-    normalized_root_vel = rotations.quat_rotate_inverse(root_rot, root_vel, w_last)
-    obs.append(normalized_root_vel.view(num_envs, -1))
+    obs = [
+        dof_pos.view(num_envs, -1),
+        dof_vel.view(num_envs, -1),
+        root_local_ang_vel.view(num_envs, -1),
+        proj_gravity.view(num_envs, -1),
+    ]
 ```
 
 **Explanation**:
 1. Velocities and orientation vectors (like gravity) are rotated into the root's local frame using `quat_rotate_inverse()`.
-2. Joint positions are stored as angular values (in radians) or 6D tangent-normal transformations, which guarantees smooth representation without Euler singularities.
-3. Local alignment ensures that the policy inputs remain invariant to the character's global world position or yaw heading.
+2. Local alignment ensures that the policy inputs remain invariant to the character's global world position or yaw heading.
 
 ---
 
@@ -235,13 +242,13 @@ if root_vel_obs:
 *Note: A complete scan of this repository confirms that WebSocket, prompt templating, or network/streaming buffer code is **not present** in ProtoMotions. You should refer to amica or human2humanoid extractions for network-receive layers.*
 
 **The decoupling pattern**:
-To keep the control policy decoupled from the runtime simulation, ProtoMotions exports the entire control pipeline into a single stateless **ONNX** package. It bakes raw coordinate transformations, observation mapping, policy model inference, and action scaling directly into the graph. Runtimes only need to feed raw sensors (positions, velocities) to get joint motor targets, keeping the AI logic stateless and self-contained.
+To keep the control policy decoupled from the runtime simulation, ProtoMotions exports the entire control pipeline into a single stateless **ONNX** package (baked with raw coordinate transformations, observation mapping, policy model inference, and action scaling). Runtimes only need to feed raw sensors (positions, velocities) to get joint motor targets, keeping the AI logic stateless and self-contained.
 
-#### Code Snippets (Key Logic Lines)
+#### Verified Code Snippets (Key Logic Lines)
 
 **From `protomotions/utils/export_utils.py` (ONNX Pipeline Decoupling):**
 ```python
-# Lines 779-799: Merging observation logic, neural network, and post-processing
+# Lines 779-795: Merging observation logic, neural network, and action scaling (VERIFIED)
 def export_unified_pipeline(
     observation_configs: Dict[str, Any],
     action_config: Dict[str, Any],
@@ -253,12 +260,7 @@ def export_unified_pipeline(
     device: torch.device,
     robot_config: Any,
 ):
-    # Builds a composite PyTorch model that merges observation transforms + Actor MLP
-    # and exports the entire sequence directly into one self-contained .onnx graph.
 ```
-
-**Explanation**:
-Baking observation processing directly into the ONNX graph eliminates the need to duplicate complex math (such as inverse quaternion rotations for local frames) in the deployment container. The deployment code remains clean, reading raw joints, passing them to the ONNX runtime, and applying the outputs to the motors.
 
 ---
 
@@ -267,24 +269,19 @@ Baking observation processing directly into the ONNX graph eliminates the need t
 **Copying transforms from physical simulation to render nodes**:
 ProtoMotions synchronizes positions and orientations from physical rigid bodies to visual nodes by reading rigid body transforms (`rigid_body_pos` and `rigid_body_rot` quaternions) each frame and applying them directly.
 
-#### Code Snippets (Key Logic Lines)
+#### Verified Code Snippets (Key Logic Lines)
 
 **From `protomotions/simulator/newton/simulator.py` (State Extraction):**
 ```python
-# Lines 634-644: Pulling link transforms from Newton's state
-body_transforms = (
-    wp.to_torch(self.robot_view.get_link_transforms(self.state_0))
-    .squeeze(1)
-    .view(self.num_envs, self.robot_config.kinematic_info.num_bodies, -1)
+# Lines 925-933: Pulling link transforms from Newton's state (VERIFIED)
+        body_transforms = (
+            wp.to_torch(self.robot_view.get_link_transforms(self.state_0))
+            .squeeze(1)
+            .view(self.num_envs, self.robot_config.kinematic_info.num_bodies, -1)
 )
-body_pos = body_transforms[:, :, :3]
-body_rot = body_transforms[:, :, 3:] # Quaternions
+        body_pos = body_transforms[:, :, :3]
+        body_rot = body_transforms[:, :, 3:]
 ```
-
-**Explanation**:
-1. Transforms are fetched from the physics engine state (`self.state_0`) after stepping.
-2. The coordinate values (`body_pos` and `body_rot`) reflect the simulation "truth" (world coordinate space).
-3. Ground offsets (such as capsule-to-mesh vertical differences) are parsed during asset loading to prevent the visual render mesh from clipping the floor.
 
 ---
 
@@ -420,7 +417,6 @@ export class ObservationBuilder {
     // Append joint angles and joint velocities
     joints.forEach(joint => {
       obs.push(joint.angle());
-      // Rapier doesn't have a direct joint.velocity() API, so we measure velocity manually or read joint motor states.
     });
 
     return new Float32Array(obs);
@@ -478,6 +474,18 @@ During porting, keep the following missing Rapier equivalents in mind:
 2. **Joint Velocity (`joint.velocity()`)**: Rapier's `RevoluteJoint` doesn't provide a joint velocity getter directly. You must calculate joint velocity manually from consecutive joint angle measurements:
    $$\dot{\theta} \approx \frac{\theta_t - \theta_{t-1}}{\Delta t}$$
 3. **GPU-Accelerated Parallel Environments**: Rapier runs single-threaded on CPU. Unlike Warp/Newton, parallel simulation steps in Web workers must be orchestrated manually.
+
+---
+
+### 3.5 — Critical Architectural Gap (The Mapping Seam)
+
+The mapping definition:
+```typescript
+AvatarSynchronizer.bonesMap: Map<string, THREE.Bone>
+```
+assumes you already have a string-keyed bone map matching your physics body names. But index-based kinematics resolution (as parsed in 2.1) does *not* guarantee names line up. This mismatch is the core reason for the "hand-modify the project per-character" bottleneck.
+* **The Structural Seam**: Visually loaded meshes (e.g. from glTF or VRM files) have standard bones, whereas the simulation config uses MJCF link names (e.g., `pelvis_contour_link` vs `mixamorigPelvis`).
+* **The amica Connection**: In the upcoming **AMICA** extraction pass, pay extreme attention to how it handles VRM bone conventions. Its translation layer resolves standard visual bones dynamically to a canonical humanoid schema (such as `VRMHumanoidBoneName` or similar standard interfaces). Combining that dynamic translation layer with ProtoMotions' physics controllers and observation builders is the ultimate key to unlocking multi-mesh flexibility in Synthia.
 
 ---
 
