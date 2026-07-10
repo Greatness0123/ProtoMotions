@@ -1,0 +1,19 @@
+{
+  "name": "synthia-refactor",
+  "version": "1.0.0",
+  "description": "Refactored browser-based humanoid simulation components using Three.js and Rapier.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.12.0",
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/three": "^0.160.0",
+    "typescript": "^5.3.3"
+  }
+}
