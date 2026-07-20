@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNTHIA / ProtoMotions WebGL Ragdoll Engine</title>
+    <style>
+        :root {
+            --bg-color: #0d0f12;
+            --panel-bg: rgba(18, 22, 28, 0.85);
+            --panel-border: rgba(45, 55, 72, 0.5);
+            --accent-color: #3182ce;
+            --accent-hover: #4299e1;
+            --text-color: #e2e8f0;
+            --text-muted: #a0aec0;
+            --danger-color: #e53e3e;
+            --success-color: #38a169;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-color);
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* HUD & Panels */
+        .hud-panel {
+            position: absolute;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            padding: 16px;
+            z-index: 10;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+            transition: all 0.3s ease;
+        }
+
+        /* Telemetry Dashboard (Top Left) */
+        #telemetry-panel {
+            top: 20px;
+            left: 20px;
+            width: 320px;
+        }
+
+        #telemetry-panel h2 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent-hover);
+            border-bottom: 1px solid var(--panel-border);
+            padding-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+        }
+
+        .stat-value {
+            font-family: "Courier New", Courier, monospace;
+            font-weight: bold;
+        }
+
+        /* Controls Sidebar (Right Side) */
+        #controls-panel {
+            top: 20px;
+            right: 20px;
+            bottom: 20px;
+            width: 360px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        #controls-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+        #controls-panel::-webkit-scrollbar-thumb {
+            background: var(--panel-border);
+            border-radius: 3px;
+        }
+
+        .control-group {
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .control-group h3 {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            color: var(--text-color);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .slider-container {
+            margin-bottom: 12px;
+        }
+
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .slider-container input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: var(--panel-border);
+            border-radius: 2px;
+            outline: none;
+            accent-color: var(--accent-color);
+            cursor: pointer;
+        }
+
+        /* Buttons & Actions */
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background: var(--accent-color);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            text-align: center;
+            transition: background 0.2s;
+            margin-bottom: 8px;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-danger {
+            background: var(--danger-color);
+        }
+        .btn-danger:hover {
+            background: #fc8181;
+        }
+
+        .btn-success {
+            background: var(--success-color);
+        }
+        .btn-success:hover {
+            background: #48bb78;
+        }
+
+        /* Drag & Drop Overlay */
+        #drop-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(13, 15, 18, 0.85);
+            border: 4px dashed var(--accent-color);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        #drop-overlay.active {
+            display: flex;
+        }
+
+        .overlay-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--accent-hover);
+            margin-bottom: 10px;
+        }
+
+        .overlay-subtitle {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        /* File Upload Picker */
+        .file-upload-wrapper {
+            position: relative;
+            margin-bottom: 8px;
+        }
+
+        .file-upload-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* Toggle switches */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .switch-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--panel-border);
+            transition: .3s;
+            border-radius: 20px;
+        }
+
+        .switch-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .switch-slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked + .switch-slider:before {
+            transform: translateX(24px);
+        }
+
+        /* Title Dashboard bottom overlay */
+        #title-panel {
+            bottom: 20px;
+            left: 20px;
+            width: 320px;
+        }
+
+        #title-panel h1 {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            color: white;
+        }
+
+        #title-panel p {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            background: var(--accent-color);
+            color: white;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        /* Loading Spinner */
+        #loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 1000;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border-left-color: var(--accent-color);
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .spinner-text {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+    </style>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+        "@dimforge/rapier3d-compat": "https://esm.sh/@dimforge/rapier3d-compat@0.12.0"
+      }
+    }
+    </script>
+</head>
+<body>
+
+    <div id="loading-spinner">
+        <div class="spinner"></div>
+        <div class="spinner-text">INITIALIZING WASM PHYSICS ENGINE...</div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <!-- Drag & Drop Backplane -->
+    <div id="drop-overlay">
+        <div class="overlay-title">DROP HUMANOD GLTF / GLB MODEL HERE</div>
+        <div class="overlay-subtitle">Compatible with Mixamo, VRM, and Standard Skeletal Rigs</div>
+    </div>
+
+    <!-- Top Left Telemetry Panel -->
+    <div id="telemetry-panel" class="hud-panel">
+        <h2>Telemetry Dashboard <span id="status-badge" class="badge">MANNEQUIN</span></h2>
+        <div class="stat-row">
+            <span class="stat-label">Active Frame Rate (FPS)</span>
+            <span id="fps-val" class="stat-value">60.00</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Global Stability Score</span>
+            <span id="stability-val" class="stat-value" style="color: var(--success-color);">100%</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Rigid Body Joints Count</span>
+            <span id="joints-count-val" class="stat-value">0</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Active Rigid Bodies Count</span>
+            <span id="bodies-count-val" class="stat-value">0</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Root Translation (x, y, z)</span>
+            <span id="root-pos-val" class="stat-value">0.00, 0.00, 0.00</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Root Velocity (m/s)</span>
+            <span id="root-vel-val" class="stat-value">0.00</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Total Traveled Distance</span>
+            <span id="distance-val" class="stat-value">0.00 m</span>
+        </div>
+    </div>
+
+    <!-- Bottom Left Title / Context Panel -->
+    <div id="title-panel" class="hud-panel">
+        <h1>SYNTHIA Ragdoll Engine</h1>
+        <p>Dynamic Ragdoll Generation, Motorized Hinge Actuators, and PD Springs. Drag limbs with your mouse to interact. Drop custom GLB/GLTF models to spawn them.</p>
+        <p style="color: var(--accent-hover); margin-top: 6px; font-weight: bold; font-size: 10px;">ℹ️ CORS/WASM Note: Run a local web server (e.g. <code>python -m http.server</code>) to bypass browser <code>file://</code> module blocks.</p>
+    </div>
+
+    <!-- Right Controls Sidebar -->
+    <div id="controls-panel" class="hud-panel">
+        <div class="control-group">
+            <h3>Rig Spawning & Upload</h3>
+            <div class="file-upload-wrapper">
+                <button class="btn btn-success">UPLOAD CUSTOM GLB/GLTF</button>
+                <input id="gltf-file-input" type="file" class="file-upload-input" accept=".glb,.gltf">
+            </div>
+            <button id="reset-rig-btn" class="btn">RESET RAGDOLL STATE</button>
+            <button id="clear-gltf-btn" class="btn btn-danger" style="display: none;">SPAWN DEFAULT MANNEQUIN</button>
+        </div>
+
+        <div class="control-group">
+            <h3>Procedural Locomotion</h3>
+            <div class="toggle-container">
+                <span>Enable Gait Controller</span>
+                <label class="switch">
+                    <input id="gait-toggle" type="checkbox">
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+            <div class="slider-container">
+                <div class="slider-label"><span>Gait Frequency (Hz)</span><span id="gait-freq-lbl">1.50</span></div>
+                <input id="gait-freq" type="range" min="0.1" max="4.0" step="0.05" value="1.5">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label"><span>Hip Stride Amplitude (rad)</span><span id="gait-amp-lbl">0.40</span></div>
+                <input id="gait-amp" type="range" min="0.0" max="1.2" step="0.02" value="0.4">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label"><span>Knee Flex Amplitude (rad)</span><span id="gait-knee-amp-lbl">0.30</span></div>
+                <input id="gait-knee-amp" type="range" min="0.0" max="1.2" step="0.02" value="0.3">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>PD Spring Controller</h3>
+            <div class="slider-container">
+                <div class="slider-label"><span>Stiffness (Kp)</span><span id="kp-lbl">200.00</span></div>
+                <input id="spring-kp" type="range" min="10.0" max="1000.0" step="10.0" value="200.0">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label"><span>Damping (Kd)</span><span id="kd-lbl">20.00</span></div>
+                <input id="spring-kd" type="range" min="1.0" max="100.0" step="1.0" value="20.0">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>Physics Engine Parameters</h3>
+            <div class="toggle-container">
+                <span>Display Physical Colliders</span>
+                <label class="switch">
+                    <input id="colliders-toggle" type="checkbox" checked>
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+            <div class="slider-container">
+                <div class="slider-label"><span>Environment Gravity (-Y)</span><span id="gravity-lbl">9.81</span></div>
+                <input id="physics-gravity" type="range" min="0.0" max="25.0" step="0.1" value="9.81">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label"><span>Ground Friction</span><span id="friction-lbl">0.80</span></div>
+                <input id="ground-friction" type="range" min="0.1" max="2.0" step="0.05" value="0.8">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label"><span>Ground Restitution</span><span id="restitution-lbl">0.05</span></div>
+                <input id="ground-restitution" type="range" min="0.0" max="1.0" step="0.05" value="0.05">
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN ENGINE IMPLEMENTATION -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import * as RAPIER_MODULE from '@dimforge/rapier3d-compat';
+
+        // Robust default export alignment
+        const RAPIER = RAPIER_MODULE.default || RAPIER_MODULE;
+
+        // Biomechanical taxonomy mapping dictionary to automatically bind multiple rig formats
+        const BONE_TAXONOMY = {
+            HIPS: ['hips', 'pelvis', 'root', 'mixamorighips', 'b_pelvis'],
+            SPINE: ['spine', 'spine1', 'mixamorigspine', 'b_spine'],
+            CHEST: ['chest', 'upperchest', 'spine2', 'mixamorigspine1', 'mixamorigspine2', 'b_chest'],
+            NECK: ['neck', 'mixamorigneck', 'b_neck'],
+            HEAD: ['head', 'mixamorighead', 'b_head'],
+
+            LEFT_UP_LEG: ['leftupleg', 'left_thigh', 'l_thigh', 'l_hip', 'mixamorigleftupleg', 'b_l_thigh'],
+            LEFT_LEG: ['leftleg', 'left_knee', 'l_knee', 'l_shin', 'mixamorigleftleg', 'b_l_calf'],
+            LEFT_FOOT: ['leftfoot', 'left_ankle', 'l_ankle', 'l_foot', 'mixamorigleftfoot', 'b_l_foot'],
+
+            RIGHT_UP_LEG: ['rightupleg', 'right_thigh', 'r_thigh', 'r_hip', 'mixamorigrightupleg', 'b_r_thigh'],
+            RIGHT_LEG: ['rightleg', 'right_knee', 'r_knee', 'r_shin', 'mixamorigrightleg', 'b_r_calf'],
+            RIGHT_FOOT: ['rightfoot', 'right_ankle', 'r_ankle', 'r_foot', 'mixamorigrightfoot', 'b_r_foot'],
+
+            LEFT_SHOULDER: ['leftshoulder', 'l_shoulder', 'left_clavicle', 'mixamorigleftshoulder', 'b_l_clavicle'],
+            LEFT_ARM: ['leftarm', 'left_upper_arm', 'l_upper_arm', 'l_arm', 'mixamorigleftarm', 'b_l_upperarm'],
+            LEFT_FORE_ARM: ['leftforearm', 'left_lower_arm', 'l_lower_arm', 'l_forearm', 'mixamorigleftforearm', 'b_l_forearm'],
+            LEFT_HAND: ['lefthand', 'left_wrist', 'l_wrist', 'l_hand', 'mixamoriglefthand', 'b_l_hand'],
+
+            RIGHT_SHOULDER: ['rightshoulder', 'r_shoulder', 'right_clavicle', 'mixamorigrightshoulder', 'b_r_clavicle'],
+            RIGHT_ARM: ['rightarm', 'right_upper_arm', 'r_upper_arm', 'r_arm', 'mixamorigrightarm', 'b_r_upperarm'],
+            RIGHT_FORE_ARM: ['rightforearm', 'right_lower_arm', 'r_lower_arm', 'r_forearm', 'mixamorigrightforearm', 'b_r_forearm'],
+            RIGHT_HAND: ['righthand', 'right_wrist', 'r_wrist', 'r_hand', 'mixamorigrighthand', 'b_r_hand']
+        };
+
+        // UI update loops
+        let lastTime = performance.now();
+        let frameCount = 0;
+        let stabilityScore = 100;
+        let totalDistance = 0.0;
+        let lastRootX = 0, lastRootZ = 0;
+        let isFirstFrame = true;
+
+        // Globals
+        let scene, camera, renderer, orbitControls, physicsWorld;
+        let visualRigGroup = null; // Contains current active uploaded/procedural humanoid
+        let physicalBodies = [];   // List of objects mapping { bone, rigidBody, collider, mesh, offsetQuat, parentLocalMatrix }
+        let jointList = [];        // List of Rapier joints
+        let groundCollider = null;
+
+        // User parameters
+        let params = {
+            gaitEnabled: false,
+            gaitFreq: 1.5,
+            gaitAmp: 0.4,
+            gaitKneeAmp: 0.3,
+            springKp: 200.0,
+            springKd: 20.0,
+            gravity: 9.81,
+            friction: 0.8,
+            restitution: 0.05,
+            showColliders: true
+        };
+
+        // Drag Handler variables
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        let dragJoint = null;
+        let dragKinematicBody = null;
+        let selectedBodyIndex = -1;
+
+        // Step 1: Initialize WASM Physics & ThreeJS Context
+        async function initialize() {
+            try {
+                await RAPIER.init();
+                document.getElementById('loading-spinner').style.opacity = 0;
+                setTimeout(() => document.getElementById('loading-spinner').remove(), 500);
+
+                setupThreeJS();
+                setupRapierPhysics();
+                setupUIEventListeners();
+
+                // Spawn default procedural manifold mannekin
+                spawnProceduralMannequin();
+
+                animate();
+            } catch (err) {
+                console.error("Initialization failed:", err);
+                document.querySelector('.spinner-text').innerText = "FAILED TO INITIALIZE RAPIER3D COMPAT";
+            }
+        }
+
+        function setupThreeJS() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0c10);
+            scene.fog = new THREE.FogExp2(0x0a0c10, 0.03);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / container.clientHeight, 0.1, 100);
+            camera.position.set(0, 3, 6);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            orbitControls = new OrbitControls(camera, renderer.domElement);
+            orbitControls.enableDamping = true;
+            orbitControls.dampingFactor = 0.05;
+            orbitControls.maxPolarAngle = Math.PI / 2 - 0.05; // Stay above ground
+            orbitControls.minDistance = 1;
+            orbitControls.maxDistance = 25;
+            orbitControls.target.set(0, 1, 0);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(5, 12, 5);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.bias = -0.0005;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 25;
+            dirLight.shadow.camera.left = -6;
+            dirLight.shadow.camera.right = 6;
+            dirLight.shadow.camera.top = 6;
+            dirLight.shadow.camera.bottom = -6;
+            scene.add(dirLight);
+
+            // Infinite Checkerboard Grid Floor
+            const gridHelper = new THREE.GridHelper(100, 100, 0x1d2430, 0x141a24);
+            gridHelper.position.y = -0.001;
+            scene.add(gridHelper);
+
+            // Shadow receiving floor plane
+            const floorGeo = new THREE.PlaneGeometry(100, 100);
+            const floorMat = new THREE.MeshStandardMaterial({
+                color: 0x0a0c10,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function setupRapierPhysics() {
+            let gravity = { x: 0.0, y: -params.gravity, z: 0.0 };
+            physicsWorld = new RAPIER.World(gravity);
+
+            // Floor physical plane - set descriptor values via direct properties
+            let groundDesc = RAPIER.ColliderDesc.cuboid(50.0, 0.1, 50.0);
+            groundDesc.translation = { x: 0.0, y: -0.1, z: 0.0 };
+            groundDesc.friction = params.friction;
+            groundDesc.restitution = params.restitution;
+            groundCollider = physicsWorld.createCollider(groundDesc);
+
+            // Kinematic target handle for dragging
+            let dragBodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased();
+            dragKinematicBody = physicsWorld.createRigidBody(dragBodyDesc);
+        }
+
+        // Helper to resolve taxonomy names
+        function findMatchedBone(rootNode, key) {
+            let found = null;
+            const patterns = BONE_TAXONOMY[key];
+
+            rootNode.traverse(node => {
+                if (found) return;
+                if (node.isBone) {
+                    const nameLower = node.name.toLowerCase();
+                    if (patterns.some(p => nameLower === p || nameLower.includes(p))) {
+                        found = node;
+                    }
+                }
+            });
+            return found;
+        }
+
+        // Destroy previous model, bodies and joints
+        function clearHumanoidState() {
+            if (dragJoint) {
+                physicsWorld.removeImpulseJoint(dragJoint, true);
+                dragJoint = null;
+            }
+            jointList.forEach(j => physicsWorld.removeImpulseJoint(j, true));
+            physicalBodies.forEach(b => {
+                physicsWorld.removeRigidBody(b.rigidBody);
+                if (b.helperMesh) scene.remove(b.helperMesh);
+            });
+            if (visualRigGroup) {
+                scene.remove(visualRigGroup);
+            }
+            physicalBodies = [];
+            jointList = [];
+            visualRigGroup = null;
+            totalDistance = 0.0;
+            isFirstFrame = true;
+            selectedBodyIndex = -1;
+        }
+
+        // Setup Drag joint with Raycasting
+        function startDrag(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            // Find clicked bone
+            const intersects = [];
+            physicalBodies.forEach((b, idx) => {
+                if (b.helperMesh) {
+                    const hits = raycaster.intersectObject(b.helperMesh);
+                    if (hits.length > 0) {
+                        intersects.push({ idx, hit: hits[0] });
+                    }
+                }
+            });
+
+            if (intersects.length > 0) {
+                // Sort by distance
+                intersects.sort((a, b) => a.hit.distance - b.hit.distance);
+                const match = intersects[0];
+                selectedBodyIndex = match.idx;
+
+                const hitPoint = match.hit.point;
+                orbitControls.enabled = false; // lock camera
+
+                // Setup kinematic handle position
+                dragKinematicBody.setNextKinematicTranslation({ x: hitPoint.x, y: hitPoint.y, z: hitPoint.z });
+
+                const targetBody = physicalBodies[selectedBodyIndex].rigidBody;
+                const tPos = targetBody.translation();
+                const tRot = targetBody.rotation();
+                const targetWorldMat = new THREE.Matrix4().compose(
+                    new THREE.Vector3(tPos.x, tPos.y, tPos.z),
+                    new THREE.Quaternion(tRot.x, tRot.y, tRot.z, tRot.w),
+                    new THREE.Vector3(1, 1, 1)
+                );
+                const localAnchorVec = new THREE.Vector3(hitPoint.x, hitPoint.y, hitPoint.z)
+                    .applyMatrix4(targetWorldMat.invert());
+                const localAnchor = { x: localAnchorVec.x, y: localAnchorVec.y, z: localAnchorVec.z };
+
+                // Create spring-like spherical joint limit
+                let jointDesc = RAPIER.JointData.spherical({ x: 0, y: 0, z: 0 }, localAnchor);
+                dragJoint = physicsWorld.createImpulseJoint(jointDesc, dragKinematicBody, targetBody, true);
+            }
+        }
+
+        function moveDrag(clientX, clientY) {
+            if (selectedBodyIndex === -1 || !dragJoint) return;
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            // Project mouse position onto camera-facing normal plane at selected joint depth
+            const boneWorld = physicalBodies[selectedBodyIndex].rigidBody.translation();
+            plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()).negate(), new THREE.Vector3(boneWorld.x, boneWorld.y, boneWorld.z));
+
+            const dragPoint = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(plane, dragPoint)) {
+                dragKinematicBody.setNextKinematicTranslation({ x: dragPoint.x, y: dragPoint.y, z: dragPoint.z });
+            }
+        }
+
+        function endDrag() {
+            if (dragJoint) {
+                physicsWorld.removeImpulseJoint(dragJoint, true);
+                dragJoint = null;
+            }
+            selectedBodyIndex = -1;
+            orbitControls.enabled = true;
+        }
+
+        // Setup visual controls & sliders listeners
+        function setupUIEventListeners() {
+            const input = document.getElementById('gltf-file-input');
+            input.addEventListener('change', e => {
+                const file = e.target.files[0];
+                if (file) handleHumanoidUpload(file);
+            });
+
+            document.getElementById('reset-rig-btn').addEventListener('click', () => {
+                if (visualRigGroup) {
+                    const fallback = !document.getElementById('clear-gltf-btn').style.display;
+                    if (fallback) spawnProceduralMannequin();
+                    else reinitializeRigState();
+                }
+            });
+
+            document.getElementById('clear-gltf-btn').addEventListener('click', () => {
+                spawnProceduralMannequin();
+            });
+
+            // Toggle Switches
+            document.getElementById('gait-toggle').addEventListener('change', e => {
+                params.gaitEnabled = e.target.checked;
+            });
+            document.getElementById('colliders-toggle').addEventListener('change', e => {
+                params.showColliders = e.target.checked;
+                physicalBodies.forEach(b => {
+                    if (b.helperMesh) b.helperMesh.visible = params.showColliders;
+                });
+            });
+
+            // Sliders updates
+            const mapSlider = (id, targetKey, lblId, precision = 2) => {
+                const s = document.getElementById(id);
+                s.addEventListener('input', e => {
+                    const val = parseFloat(e.target.value);
+                    params[targetKey] = val;
+                    document.getElementById(lblId).innerText = val.toFixed(precision);
+
+                    if (targetKey === 'gravity') {
+                        physicsWorld.gravity = { x: 0, y: -val, z: 0 };
+                    } else if (targetKey === 'friction') {
+                        groundCollider.setFriction(val);
+                    } else if (targetKey === 'restitution') {
+                        groundCollider.setRestitution(val);
+                    }
+                });
+            };
+
+            mapSlider('gait-freq', 'gaitFreq', 'gait-freq-lbl', 2);
+            mapSlider('gait-amp', 'gaitAmp', 'gait-amp-lbl', 2);
+            mapSlider('gait-knee-amp', 'gaitKneeAmp', 'gait-knee-amp-lbl', 2);
+            mapSlider('spring-kp', 'springKp', 'kp-lbl', 0);
+            mapSlider('spring-kd', 'springKd', 'kd-lbl', 0);
+            mapSlider('physics-gravity', 'gravity', 'gravity-lbl', 2);
+            mapSlider('ground-friction', 'friction', 'friction-lbl', 2);
+            mapSlider('ground-restitution', 'restitution', 'restitution-lbl', 2);
+
+            // Drag mouse hooks
+            const container = document.getElementById('canvas-container');
+            container.addEventListener('mousedown', e => startDrag(e.clientX, e.clientY));
+            container.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+            window.addEventListener('mouseup', endDrag);
+
+            // Mobile touch hooks
+            container.addEventListener('touchstart', e => {
+                if (e.touches.length === 1) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+            });
+            container.addEventListener('touchmove', e => {
+                if (e.touches.length === 1) moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+            });
+            window.addEventListener('touchend', endDrag);
+
+            // Drag and drop overlay hooks
+            window.addEventListener('dragover', e => {
+                e.preventDefault();
+                document.getElementById('drop-overlay').classList.add('active');
+            });
+            window.addEventListener('dragleave', e => {
+                e.preventDefault();
+                document.getElementById('drop-overlay').classList.remove('active');
+            });
+            window.addEventListener('drop', e => {
+                e.preventDefault();
+                document.getElementById('drop-overlay').classList.remove('active');
+                if (e.dataTransfer.files.length > 0) {
+                    handleHumanoidUpload(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        // Spawn a procedural manifold skeleton out-of-the-box (Mannequin fallback)
+        function spawnProceduralMannequin() {
+            clearHumanoidState();
+            document.getElementById('status-badge').innerText = "MANNEQUIN";
+            document.getElementById('clear-gltf-btn').style.display = "none";
+
+            // Build simple Three.js hierarchy representing procedural bones
+            visualRigGroup = new THREE.Group();
+            scene.add(visualRigGroup);
+
+            // We create simple meshes with nested Object3D mimicking actual GLTF joints
+            const bones = {};
+            const createJointNode = (name, parentNode) => {
+                const obj = new THREE.Object3D();
+                obj.name = name;
+                obj.isBone = true;
+                if (parentNode) parentNode.add(obj);
+                else visualRigGroup.add(obj);
+                bones[name] = obj;
+                return obj;
+            };
+
+            // Skeleton Tree Setup
+            const hips = createJointNode('Hips', null);
+            hips.position.set(0, 1.15, 0);
+
+            const spine = createJointNode('Spine', hips);
+            spine.position.set(0, 0.15, 0);
+
+            const chest = createJointNode('Chest', spine);
+            chest.position.set(0, 0.20, 0);
+
+            const neck = createJointNode('Neck', chest);
+            neck.position.set(0, 0.10, 0);
+
+            const head = createJointNode('Head', neck);
+            head.position.set(0, 0.08, 0);
+
+            // Legs
+            const lUpLeg = createJointNode('LeftUpLeg', hips);
+            lUpLeg.position.set(-0.12, -0.05, 0);
+            const lLeg = createJointNode('LeftLeg', lUpLeg);
+            lLeg.position.set(0, -0.45, 0);
+            const lFoot = createJointNode('LeftFoot', lLeg);
+            lFoot.position.set(0, -0.42, 0);
+
+            const rUpLeg = createJointNode('RightUpLeg', hips);
+            rUpLeg.position.set(0.12, -0.05, 0);
+            const rLeg = createJointNode('RightLeg', rUpLeg);
+            rLeg.position.set(0, -0.45, 0);
+            const rFoot = createJointNode('RightFoot', rLeg);
+            rFoot.position.set(0, -0.42, 0);
+
+            // Arms
+            const lShoulder = createJointNode('LeftShoulder', chest);
+            lShoulder.position.set(-0.16, 0.15, 0);
+            const lArm = createJointNode('LeftArm', lShoulder);
+            lArm.position.set(-0.10, 0, 0);
+            const lForearm = createJointNode('LeftForeArm', lArm);
+            lForearm.position.set(-0.25, 0, 0);
+            const lHand = createJointNode('LeftHand', lForearm);
+            lHand.position.set(-0.22, 0, 0);
+
+            const rShoulder = createJointNode('RightShoulder', chest);
+            rShoulder.position.set(0.16, 0.15, 0);
+            const rArm = createJointNode('RightArm', rShoulder);
+            rArm.position.set(0.10, 0, 0);
+            const rForearm = createJointNode('RightForeArm', rArm);
+            rForearm.position.set(0.25, 0, 0);
+            const rHand = createJointNode('RightHand', rForearm);
+            rHand.position.set(0.22, 0, 0);
+
+            // Set matrixWorlds cleanly before creating physics
+            visualRigGroup.updateMatrixWorld(true);
+
+            // Attach dynamic ragdoll matching our tree
+            generatePhysicalRagdoll(hips);
+        }
+
+        // Reinitialize the current ragdoll to starting world state
+        function reinitializeRigState() {
+            physicalBodies.forEach(b => {
+                b.bone.position.copy(b.initLocalPos);
+                b.bone.quaternion.copy(b.initLocalQuat);
+            });
+            if (visualRigGroup) visualRigGroup.updateMatrixWorld(true);
+
+            physicalBodies.forEach(b => {
+                const worldPos = new THREE.Vector3();
+                const worldQuat = new THREE.Quaternion();
+                b.bone.getWorldPosition(worldPos);
+                b.bone.getWorldQuaternion(worldQuat);
+
+                b.rigidBody.setTranslation({ x: worldPos.x, y: worldPos.y, z: worldPos.z }, true);
+                b.rigidBody.setRotation({ x: worldQuat.x, y: worldQuat.y, z: worldQuat.z, w: worldQuat.w }, true);
+                b.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+                b.rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
+            });
+            totalDistance = 0.0;
+            isFirstFrame = true;
+        }
+
+        // GLTF / GLB Loader completely client-side
+        function handleHumanoidUpload(file) {
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const contents = event.target.result;
+                const loader = new GLTFLoader();
+
+                // Show loading HUD
+                const spinner = document.createElement('div');
+                spinner.id = "upload-loader";
+                spinner.innerHTML = `<div id="loading-spinner"><div class="spinner"></div><div class="spinner-text">PARSING RIG AND SKELETON TREE...</div></div>`;
+                document.body.appendChild(spinner);
+
+                loader.parse(contents, '', (gltf) => {
+                    spinner.remove();
+
+                    // Clear previous states
+                    clearHumanoidState();
+
+                    visualRigGroup = gltf.scene;
+                    scene.add(visualRigGroup);
+
+                    // Search for Hips
+                    const hipsBone = findMatchedBone(visualRigGroup, 'HIPS');
+                    if (!hipsBone) {
+                        alert("Error: Root 'Hips' or 'Pelvis' bone could not be mapped. Make sure your model has standard game bones.");
+                        spawnProceduralMannequin();
+                        return;
+                    }
+
+                    document.getElementById('status-badge').innerText = "CUSTOM GLTF";
+                    document.getElementById('clear-gltf-btn').style.display = "block";
+
+                    // Center model and lift above floor
+                    gltf.scene.position.set(0, 0, 0);
+                    gltf.scene.updateMatrixWorld(true);
+
+                    // Extract actual world height and position of hips
+                    const hipsWorldPos = new THREE.Vector3();
+                    hipsBone.getWorldPosition(hipsWorldPos);
+
+                    // Adjust height if hips start too low/high
+                    if (hipsWorldPos.y < 0.5) {
+                        gltf.scene.position.y += (1.1 - hipsWorldPos.y);
+                        gltf.scene.updateMatrixWorld(true);
+                    }
+
+                    // Build the ragdoll!
+                    generatePhysicalRagdoll(hipsBone);
+
+                }, (err) => {
+                    spinner.remove();
+                    console.error("Failed to parse GLTF:", err);
+                    alert("Failed to parse GLTF file. Make sure it is a valid format.");
+                    spawnProceduralMannequin();
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Recursive dynamic ragdoll builder
+        function generatePhysicalRagdoll(hipsBone) {
+            const bonesToProcess = [
+                { key: 'HIPS', parentKey: null },
+                { key: 'SPINE', parentKey: 'HIPS' },
+                { key: 'CHEST', parentKey: 'SPINE' },
+                { key: 'NECK', parentKey: 'CHEST' },
+                { key: 'HEAD', parentKey: 'NECK' },
+
+                { key: 'LEFT_UP_LEG', parentKey: 'HIPS' },
+                { key: 'LEFT_LEG', parentKey: 'LEFT_UP_LEG' },
+                { key: 'LEFT_FOOT', parentKey: 'LEFT_LEG' },
+
+                { key: 'RIGHT_UP_LEG', parentKey: 'HIPS' },
+                { key: 'RIGHT_LEG', parentKey: 'RIGHT_UP_LEG' },
+                { key: 'RIGHT_FOOT', parentKey: 'RIGHT_LEG' },
+
+                { key: 'LEFT_SHOULDER', parentKey: 'CHEST' },
+                { key: 'LEFT_ARM', parentKey: 'LEFT_SHOULDER' },
+                { key: 'LEFT_FORE_ARM', parentKey: 'LEFT_ARM' },
+                { key: 'LEFT_HAND', parentKey: 'LEFT_FORE_ARM' },
+
+                { key: 'RIGHT_SHOULDER', parentKey: 'CHEST' },
+                { key: 'RIGHT_ARM', parentKey: 'RIGHT_SHOULDER' },
+                { key: 'RIGHT_FORE_ARM', parentKey: 'RIGHT_ARM' },
+                { key: 'RIGHT_HAND', parentKey: 'RIGHT_FORE_ARM' }
+            ];
+
+            const bodyMap = {}; // Key mapping to physical body structures
+
+            // Step 1: Discover bones by taxonomy and record initial structures
+            bonesToProcess.forEach(entry => {
+                const bone = findMatchedBone(hipsBone, entry.key);
+                if (!bone) return; // Optional parts (like shoulders or chest can be missing)
+
+                const worldPos = new THREE.Vector3();
+                const worldQuat = new THREE.Quaternion();
+                bone.getWorldPosition(worldPos);
+                bone.getWorldQuaternion(worldQuat);
+
+                // Compute length by looking for child bone
+                let boneLen = 0.15; // default for end effectors
+                let dirVec = new THREE.Vector3(0, -1, 0); // default down direction
+
+                if (bone.children.length > 0) {
+                    const child = bone.children[0];
+                    const childWorldPos = new THREE.Vector3();
+                    child.getWorldPosition(childWorldPos);
+                    const diff = new THREE.Vector3().subVectors(childWorldPos, worldPos);
+                    boneLen = diff.length();
+                    if (boneLen > 0.01) {
+                        dirVec.copy(diff).normalize();
+                    }
+                }
+
+                // Setup geometry thickness radius based on bone type
+                let thickness = 0.05;
+                if (entry.key.includes('HEAD')) thickness = 0.085;
+                else if (entry.key.includes('HIPS')) thickness = 0.09;
+                else if (entry.key.includes('SPINE') || entry.key.includes('CHEST')) thickness = 0.075;
+                else if (entry.key.includes('LEG')) thickness = 0.055;
+                else if (entry.key.includes('FOOT')) thickness = 0.035;
+                else if (entry.key.includes('ARM') || entry.key.includes('FORE_ARM')) thickness = 0.04;
+                else if (entry.key.includes('HAND')) thickness = 0.03;
+
+                // Center of the physical capsule lies in the middle of the bone vector segment
+                const offset = new THREE.Vector3().copy(dirVec).multiplyScalar(boneLen * 0.5);
+                const midPoint = new THREE.Vector3().addVectors(worldPos, offset);
+
+                // Spawning physical body in Rapier3D - set configuration descriptor values directly
+                let bodyDesc = RAPIER.RigidBodyDesc.dynamic();
+                bodyDesc.translation = { x: midPoint.x, y: midPoint.y, z: midPoint.z };
+                bodyDesc.rotation = { x: worldQuat.x, y: worldQuat.y, z: worldQuat.z, w: worldQuat.w };
+                bodyDesc.linearDamping = 0.5;
+                bodyDesc.angularDamping = 0.5;
+
+                let rigidBody = physicsWorld.createRigidBody(bodyDesc);
+
+                // Spawning Collider
+                let colliderDesc;
+                if (entry.key === 'HIPS') {
+                    // hips acts as pelvis sphere - set descriptor values directly using ball()
+                    colliderDesc = RAPIER.ColliderDesc.ball(thickness);
+                    colliderDesc.friction = params.friction;
+                    colliderDesc.restitution = params.restitution;
+                } else {
+                    // standard capsules representing bones - set descriptor values directly
+                    let halfH = Math.max(0.01, boneLen * 0.5 - thickness);
+                    colliderDesc = RAPIER.ColliderDesc.capsule(halfH, thickness);
+                    colliderDesc.friction = params.friction;
+                    colliderDesc.restitution = params.restitution;
+                }
+
+                let collider = physicsWorld.createCollider(colliderDesc, rigidBody);
+
+                // Spawning visual helper capsules (translucent)
+                let helperMesh;
+                if (entry.key === 'HIPS') {
+                    const geo = new THREE.SphereGeometry(thickness, 16, 16);
+                    const mat = new THREE.MeshBasicMaterial({ color: 0x3182ce, wireframe: true, transparent: true, opacity: 0.4 });
+                    helperMesh = new THREE.Mesh(geo, mat);
+                } else {
+                    const geo = new THREE.CapsuleGeometry(thickness, boneLen - thickness*2, 8, 16);
+                    const mat = new THREE.MeshBasicMaterial({ color: 0x4299e1, wireframe: true, transparent: true, opacity: 0.4 });
+                    helperMesh = new THREE.Mesh(geo, mat);
+                }
+                helperMesh.visible = params.showColliders;
+                scene.add(helperMesh);
+
+                const bodyStruct = {
+                    key: entry.key,
+                    bone: bone,
+                    rigidBody: rigidBody,
+                    collider: collider,
+                    helperMesh: helperMesh,
+                    boneLen: boneLen,
+                    thickness: thickness,
+                    midPointOffset: offset, // offset vector from bone origin to center of capsule
+                    initLocalPos: bone.position.clone(),
+                    initLocalQuat: bone.quaternion.clone()
+                };
+
+                physicalBodies.push(bodyStruct);
+                bodyMap[entry.key] = bodyStruct;
+            });
+
+            // Step 2: Establish Impulse Joints & Motor constraints recursively
+            bonesToProcess.forEach(entry => {
+                if (!entry.parentKey) return; // skip hips root
+
+                const child = bodyMap[entry.key];
+                const parent = bodyMap[entry.parentKey];
+                if (!child || !parent) return;
+
+                // Joint resides precisely at child bone origin (world coordinate)
+                const jointWorldPos = new THREE.Vector3();
+                child.bone.getWorldPosition(jointWorldPos);
+
+                const parentBody = parent.rigidBody;
+                const childBody = child.rigidBody;
+
+                const pPos = parentBody.translation();
+                const pRot = parentBody.rotation();
+                const parentMidWorldMat = new THREE.Matrix4().compose(
+                    new THREE.Vector3(pPos.x, pPos.y, pPos.z),
+                    new THREE.Quaternion(pRot.x, pRot.y, pRot.z, pRot.w),
+                    new THREE.Vector3(1, 1, 1)
+                );
+                const parentAnchorVec = new THREE.Vector3(jointWorldPos.x, jointWorldPos.y, jointWorldPos.z)
+                    .applyMatrix4(parentMidWorldMat.invert());
+                const parentAnchor = { x: parentAnchorVec.x, y: parentAnchorVec.y, z: parentAnchorVec.z };
+
+                const cPos = childBody.translation();
+                const cRot = childBody.rotation();
+                const childMidWorldMat = new THREE.Matrix4().compose(
+                    new THREE.Vector3(cPos.x, cPos.y, cPos.z),
+                    new THREE.Quaternion(cRot.x, cRot.y, cRot.z, cRot.w),
+                    new THREE.Vector3(1, 1, 1)
+                );
+                const childAnchorVec = new THREE.Vector3(jointWorldPos.x, jointWorldPos.y, jointWorldPos.z)
+                    .applyMatrix4(childMidWorldMat.invert());
+                const childAnchor = { x: childAnchorVec.x, y: childAnchorVec.y, z: childAnchorVec.z };
+
+                // Construct hybrid spring hinges or spherics based on taxonomy rules
+                let joint;
+                if (entry.key.includes('KNEE') || entry.key.includes('ELBOW') || entry.key.includes('ANKLE')) {
+                    // Revolute joint around X axis (hinge) with rigid limit
+                    let limitMin = -Math.PI / 2;
+                    let limitMax = 0;
+
+                    if (entry.key.includes('ELBOW')) { limitMin = -Math.PI * 0.8; limitMax = 0; }
+                    else if (entry.key.includes('KNEE')) { limitMin = 0; limitMax = Math.PI * 0.8; }
+
+                    let jointData = RAPIER.JointData.revolute(parentAnchor, childAnchor, { x: 1, y: 0, z: 0 });
+                    jointData.limitsEnabled = true;
+                    jointData.limits = [limitMin, limitMax];
+
+                    joint = physicsWorld.createImpulseJoint(jointData, parentBody, childBody, true);
+
+                    // Enable motor drive
+                    joint.configureMotorModel(RAPIER.MotorModel.Acceleration);
+                    joint.configureMotorPosition(0.0, params.springKp, params.springKd);
+                } else {
+                    // Spherical joints (3 DOFs) backed by spring limits
+                    let jointData = RAPIER.JointData.spherical(parentAnchor, childAnchor);
+                    joint = physicsWorld.createImpulseJoint(jointData, parentBody, childBody, true);
+                }
+
+                jointList.push(joint);
+                child.joint = joint; // link joint to child body
+            });
+
+            // Update DOM
+            document.getElementById('joints-count-val').innerText = jointList.length;
+            document.getElementById('bodies-count-val').innerText = physicalBodies.length;
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // Step 3: Core Simulation & Synchronization Loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Step Rapier Physics
+            physicsWorld.step();
+
+            // Synchronize Three.js skinned mesh bone transforms to match Rapier RigidBodies
+            physicalBodies.forEach(b => {
+                const bodyPos = b.rigidBody.translation();
+                const bodyQuat = b.rigidBody.rotation();
+
+                // Compute world Matrix representing the physical capsule midpoint
+                const physicalMidpointWorldMatrix = new THREE.Matrix4().compose(
+                    new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z),
+                    new THREE.Quaternion(bodyQuat.x, bodyQuat.y, bodyQuat.z, bodyQuat.w),
+                    new THREE.Vector3(1, 1, 1)
+                );
+
+                // Offset matrix back to bone origin location (from capsule center)
+                const offsetMat = new THREE.Matrix4().makeTranslation(
+                    -b.midPointOffset.x,
+                    -b.midPointOffset.y,
+                    -b.midPointOffset.z
+                );
+                const boneWorldMatrix = physicalMidpointWorldMatrix.multiply(offsetMat);
+
+                // Align helper capsules visually with Rapier body positions
+                if (b.helperMesh) {
+                    b.helperMesh.position.set(bodyPos.x, bodyPos.y, bodyPos.z);
+                    b.helperMesh.quaternion.set(bodyQuat.x, bodyQuat.y, bodyQuat.z, bodyQuat.w);
+                }
+
+                // Decompose and assign back to the bone local transform
+                const parent = b.bone.parent;
+                if (parent && parent.isBone) {
+                    const parentWorldInverted = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+                    parentWorldInverted.multiply(boneWorldMatrix);
+                    parentWorldInverted.decompose(b.bone.position, b.bone.quaternion, b.bone.scale);
+                } else {
+                    boneWorldMatrix.decompose(b.bone.position, b.bone.quaternion, b.bone.scale);
+                }
+
+                b.bone.updateMatrixWorld(true);
+            });
+
+            // Procedural Locomotion (PD Gait Controllers)
+            if (params.gaitEnabled) {
+                applyProceduralGaitControl();
+            }
+
+            // Sync OrbitControls and render
+            orbitControls.update();
+            renderer.render(scene, camera);
+
+            // Update UI Telemetry Panel
+            updateTelemetryHUD();
+        }
+
+        // Sinusoidal walking patterns applying target angle torque motors
+        function applyProceduralGaitControl() {
+            const time = performance.now() * 0.001 * params.gaitFreq * Math.PI * 2;
+
+            physicalBodies.forEach(b => {
+                if (!b.joint || !b.joint.configureMotorPosition) return;
+
+                let targetAngle = 0.0;
+
+                // Sinusoidal out-of-phase leg swing goniometer
+                if (b.key === 'LEFT_UP_LEG') {
+                    targetAngle = Math.sin(time) * params.gaitAmp;
+                } else if (b.key === 'RIGHT_UP_LEG') {
+                    targetAngle = -Math.sin(time) * params.gaitAmp;
+                } else if (b.key === 'LEFT_LEG') {
+                    targetAngle = (Math.sin(time + Math.PI / 2) + 1.0) * params.gaitKneeAmp;
+                } else if (b.key === 'RIGHT_LEG') {
+                    targetAngle = (-Math.sin(time + Math.PI / 2) + 1.0) * params.gaitKneeAmp;
+                } else if (b.key === 'LEFT_ARM') {
+                    targetAngle = -Math.sin(time) * params.gaitAmp * 0.5;
+                } else if (b.key === 'RIGHT_ARM') {
+                    targetAngle = Math.sin(time) * params.gaitAmp * 0.5;
+                }
+
+                // Adjust Spring limits on Rapier motor
+                b.joint.configureMotorPosition(targetAngle, params.springKp, params.springKd);
+            });
+        }
+
+        // Telemetry diagnostics updater
+        function updateTelemetryHUD() {
+            frameCount++;
+            const timeNow = performance.now();
+            if (timeNow - lastTime >= 1000) {
+                const fps = (frameCount * 1000) / (timeNow - lastTime);
+                document.getElementById('fps-val').innerText = fps.toFixed(2);
+                frameCount = 0;
+                lastTime = timeNow;
+            }
+
+            // Find Hips
+            const hipsBody = physicalBodies.find(b => b.key === 'HIPS');
+            if (hipsBody) {
+                const pos = hipsBody.rigidBody.translation();
+                const vel = hipsBody.rigidBody.linvel();
+                const speed = Math.sqrt(vel.x**2 + vel.y**2 + vel.z**2);
+
+                document.getElementById('root-pos-val').innerText = `${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`;
+                document.getElementById('root-vel-val').innerText = speed.toFixed(2);
+
+                // Accumulate distance
+                if (isFirstFrame) {
+                    lastRootX = pos.x;
+                    lastRootZ = pos.z;
+                    isFirstFrame = false;
+                } else {
+                    const d = Math.sqrt((pos.x - lastRootX)**2 + (pos.z - lastRootZ)**2);
+                    if (d > 0.001 && d < 2.0) { // filter out teleport resets
+                        totalDistance += d;
+                        lastRootX = pos.x;
+                        lastRootZ = pos.z;
+                    }
+                }
+                document.getElementById('distance-val').innerText = `${totalDistance.toFixed(2)} m`;
+
+                // Compute stability score (based on angle tilt from upright Y-axis)
+                const quat = hipsBody.rigidBody.rotation();
+                const q = new THREE.Quaternion(quat.x, quat.y, quat.z, quat.w);
+                const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+                const tilt = up.angleTo(new THREE.Vector3(0, 1, 0));
+
+                // 100% stable at 0 tilt, 0% stable at 90 deg tilt (fall)
+                stabilityScore = Math.max(0, Math.min(100, Math.round((1.0 - (tilt / (Math.PI / 2))) * 100)));
+                const stabEl = document.getElementById('stability-val');
+                stabEl.innerText = `${stabilityScore}%`;
+                if (stabilityScore > 75) stabEl.style.color = 'var(--success-color)';
+                else if (stabilityScore > 40) stabEl.style.color = 'var(--accent-hover)';
+                else stabEl.style.color = 'var(--danger-color)';
+            }
+        }
+
+        // Boot
+        initialize();
+    </script>
+</body>
+</html>
