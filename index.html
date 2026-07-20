@@ -422,6 +422,7 @@
     <div id="title-panel" class="hud-panel">
         <h1>SYNTHIA Ragdoll Engine</h1>
         <p>Dynamic Ragdoll Generation, Motorized Hinge Actuators, and PD Springs. Drag limbs with your mouse to interact. Drop custom GLB/GLTF models to spawn them.</p>
+        <p style="color: var(--accent-hover); margin-top: 6px; font-weight: bold; font-size: 10px;">ℹ️ CORS/WASM Note: Run a local web server (e.g. <code>python -m http.server</code>) to bypass browser <code>file://</code> module blocks.</p>
     </div>
 
     <!-- Right Controls Sidebar -->
@@ -500,7 +501,10 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import RAPIER from '@dimforge/rapier3d-compat';
+        import * as RAPIER_MODULE from '@dimforge/rapier3d-compat';
+
+        // Robust default export alignment
+        const RAPIER = RAPIER_MODULE.default || RAPIER_MODULE;
 
         // Biomechanical taxonomy mapping dictionary to automatically bind multiple rig formats
         const BONE_TAXONOMY = {
